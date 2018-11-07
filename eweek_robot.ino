@@ -3,12 +3,18 @@ int sensorPin = 0; //the analog pin the TMP36's Vout (sense) pin is connected to
                         //the resolution is 10 mV / degree centigrade with a
                         //500 mV offset to allow for negative temperatures
 
+// This version uses discrete temperature ranges to determine how quickly to blink the LED
+
 float friendHeatSignature = 100;
 
-float LOW_TEMP  = 70;   // F
-float HI_TEMP   = 98;   // F
+int LED_PIN = 13;
+
+float LOW_TEMP         = 70;  // F
+float HI_TEMP          = 98;  // F
+float MAX_REASONABLE_F = 200; // F
 unsigned long MAX_DELAY = 10000; // 0.2 Hz = 5000ms
 unsigned long MIN_DELAY = 40;    // 25  Hz = 40ms
+unsigned long MIN_FLASH = 60;
 
 float updateTemp()
 {
@@ -34,31 +40,52 @@ void setup()
                        //to view the result open the serial monitor 
 
   // Setup the built in LED Arduino LED to indicate when we've found our friend
-  pinMode(13, OUTPUT);
-  pinMode(12, OUTPUT);
-  pinMode(11, OUTPUT);
-  pinMode(10, OUTPUT);
-  pinMode(8 , OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
 }
 
 void setLEDsEnabled(bool on)
 {
   if (on)
   {
-    digitalWrite(13, HIGH);
-    digitalWrite(12, HIGH);
-    digitalWrite(11, HIGH);
-    digitalWrite(10, HIGH);
-    digitalWrite(8 , HIGH);
+    digitalWrite(LED_PIN, HIGH);
   }
   else
   {
-    digitalWrite(13, LOW);
-    digitalWrite(12, LOW);
-    digitalWrite(11, LOW);
-    digitalWrite(10, LOW);
-    digitalWrite(8 , LOW);
+    digitalWrite(LED_PIN, LOW);
   }
+}
+
+unsigned long lookupDelay(float tempF)
+{
+  unsigned long msDelay = 2000;
+
+  // Under LOW_TEMP (70 deg)
+  if (tempF < LOW_TEMP)
+  {
+    msDelay = 4000;
+  }
+  // [70, 80)
+  else if (tempF >= 70 && tempF < 80)
+  {
+    msDelay = 2000;
+  }
+  // [80, 90)
+  else if (tempF >= 80 && tempF < 90)
+  {
+    msDelay = 1000;
+  }
+  // [90, 95)
+  else if (tempF >= 90 && tempF < 95)
+  {
+    msDelay = 500;
+  }
+  // [95, 100)
+  else if (tempF >= 95 && tempF < 100)
+  {
+    msDelay = 250;
+  }
+
+  return msDelay;
 }
 
 void loop()
@@ -69,7 +96,7 @@ void loop()
   static unsigned long msToNextFlash = 0;
   static unsigned long timeLastFlash = 0;
   static unsigned long timeNow       = 0;
-  static unsigned long ledOnTime     = map(LOW_TEMP, LOW_TEMP, HI_TEMP, MAX_DELAY, MIN_DELAY);
+  static unsigned long ledOnTime     = MIN_FLASH; 
   static unsigned long lastPrint     = 0;
 
   // Update the temperature
@@ -79,7 +106,42 @@ void loop()
   // Update current time running
   timeNow = millis();
 
-  if ( temperatureF >= 100 )
+  if ( temperatureF > MAX_REASONABLE_F )
+  {
+    int i = 0;
+    
+    // Flash an emergency signal!
+    for ( i = 0; i < 3; i++)
+    {
+      setLEDsEnabled(true);
+      delay(100);    
+      setLEDsEnabled(false);
+      delay(100);    
+    }
+
+    delay(250);
+
+    for ( i = 0; i < 3; i++)
+    {
+      setLEDsEnabled(true);
+      delay(250);    
+      setLEDsEnabled(false);
+      delay(100);    
+    }
+    
+    delay(250);
+
+    for ( i = 0; i < 3; i++)
+    {
+      setLEDsEnabled(true);
+      delay(100);    
+      setLEDsEnabled(false);
+      delay(100);    
+    }
+
+    delay(1000);
+  }
+  else if ( temperatureF >= 100 )
   {
     if (!ledOn)
     {
@@ -112,10 +174,10 @@ void loop()
   }
   
   // Calculate how long to wait until the next flash
-  msToNextFlash = map(temperatureF, LOW_TEMP, HI_TEMP, MAX_DELAY, MIN_DELAY);
+  msToNextFlash = lookupDelay(temperatureF);
   
-  // Keep the LED on 25% of the time between flashes
-  ledOnTime = msToNextFlash / 4;
+  // Keep the LED on 20% of the time between flashes
+  ledOnTime = max(msToNextFlash / 5, MIN_FLASH);
 
   if (timeNow - lastPrint > 250)
   {
